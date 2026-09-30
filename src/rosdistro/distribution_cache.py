@@ -70,25 +70,32 @@ class DistributionCache(object):
             for repo_name, repo_data in data['source_repo_package_xmls'].items():
                 self.source_repo_package_xmls[repo_name] = SourceRepositoryCache(repo_data)
 
-        # Resolve extends recursively using parent caches if index is provided
+        # Resolve extends recursively using parent caches if index is provided.
+        # REP 159: a parent lives in the index named by its `index_url`, or in
+        # this same index when the element has none. A parent that cannot be
+        # loaded is an error: without it the child is a different distribution
+        # and must not load as if nothing were missing.
         if index and self.distribution_file.version >= 3 and self.distribution_file.extends:
-            from . import get_distribution_cache
+            from . import get_distribution_cache, get_index
             for ext in self.distribution_file.extends:
                 parent_name = ext['distro_name']
                 try:
-                    parent_cache = get_distribution_cache(index, parent_name)
-                    # Merge parent distribution file
-                    self.distribution_file.merge_extends(parent_cache.distribution_file, ext['extension_method'])
-                    # Merge package XMLs
-                    for pkg_name, xml_str in parent_cache.release_package_xmls.items():
-                        if pkg_name not in self.release_package_xmls:
-                            self.release_package_xmls[pkg_name] = xml_str
-                    # Merge source repo caches
-                    for repo_name, repo_cache in parent_cache.source_repo_package_xmls.items():
-                        if repo_name not in self.source_repo_package_xmls:
-                            self.source_repo_package_xmls[repo_name] = repo_cache
+                    parent_index = get_index(ext['index_url']) if ext.get('index_url') else index
+                    parent_cache = get_distribution_cache(parent_index, parent_name)
                 except Exception as e:
-                    logger.debug("Could not load parent cache for '%s': %s" % (parent_name, e))
+                    raise RuntimeError(
+                        "Could not load the cache of distribution '%s', which '%s' extends: %s"
+                        % (parent_name, name, e))
+                # Merge parent distribution file
+                self.distribution_file.merge_extends(parent_cache.distribution_file, ext['extension_method'])
+                # Merge package XMLs
+                for pkg_name, xml_str in parent_cache.release_package_xmls.items():
+                    if pkg_name not in self.release_package_xmls:
+                        self.release_package_xmls[pkg_name] = xml_str
+                # Merge source repo caches
+                for repo_name, repo_cache in parent_cache.source_repo_package_xmls.items():
+                    if repo_name not in self.source_repo_package_xmls:
+                        self.source_repo_package_xmls[repo_name] = repo_cache
 
         self.distribution_file.source_packages = self.get_source_packages()
 
