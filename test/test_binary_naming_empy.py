@@ -25,11 +25,12 @@ def test_empty_template_native_naming():
         'version': '10.5.0-1',
         'tags': {'release': '{package}/{version}'},
         'packages': ['gz_sim10'],
-        'binary_template': '@(package_hyphens)'
+        'binary_template': '@(package)'
     }
     repo = ReleaseRepositorySpecification('gz-sim', data)
     repo.origin_distro = 'jetty'
 
+    # @(package) must automatically have hyphens without needing package_hyphens
     assert repo.get_binary_package_name('gz_sim10') == 'gz-sim10'
 
 
@@ -142,3 +143,39 @@ def test_distribution_file_empy_templating_and_reverse_lookup():
     assert dist_file.get_package_name_from_binary('gz-lyrical-sim') == 'gz_sim'
     assert dist_file.get_package_name_from_binary('special-turtlesim-bin') == 'turtlesim'
     assert dist_file.get_package_name_from_binary('unknown-pkg') is None
+
+
+def test_empy_mandatory_underscore_sanitization():
+    # 1. Template containing literal underscores
+    data_template = {
+        'url': 'https://github.com/custom/repo-release.git',
+        'version': '1.0.0-1',
+        'tags': {'release': '{package}/{version}'},
+        'packages': ['my_pkg'],
+        'binary_template': 'vendor_@(distro)_@(package)'
+    }
+    repo_template = ReleaseRepositorySpecification('custom_repo', data_template)
+    repo_template.origin_distro = 'iron'
+    assert repo_template.get_binary_package_name('my_pkg') == 'vendor-iron-my-pkg'
+
+    # 2. Explicit binary_name containing underscores
+    data_explicit = {
+        'url': 'https://github.com/custom/repo-release.git',
+        'version': '1.0.0-1',
+        'tags': {'release': '{package}/{version}'},
+        'packages': ['my_pkg'],
+        'binary_name': 'custom_vendor_pkg'
+    }
+    repo_explicit = ReleaseRepositorySpecification('custom_repo', data_explicit)
+    assert repo_explicit.get_binary_package_name('my_pkg') == 'custom-vendor-pkg'
+
+    # 3. Explicit binary_names mapping containing underscores
+    data_dict = {
+        'url': 'https://github.com/custom/repo-release.git',
+        'version': '1.0.0-1',
+        'tags': {'release': '{package}/{version}'},
+        'packages': ['my_pkg'],
+        'binary_names': {'my_pkg': 'dict_vendor_pkg'}
+    }
+    repo_dict = ReleaseRepositorySpecification('custom_repo', data_dict)
+    assert repo_dict.get_binary_package_name('my_pkg') == 'dict-vendor-pkg'

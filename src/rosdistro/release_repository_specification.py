@@ -37,6 +37,9 @@ import re
 from .repository_specification import RepositorySpecification
 
 
+import sys
+
+
 def _expand_empy_template(template_str, context):
     try:
         import em
@@ -48,17 +51,20 @@ def _expand_empy_template(template_str, context):
                 result = result.replace('@(%s)' % k, v).replace('{%s}' % k, v)
         return result
 
-    output = io.StringIO()
+    if hasattr(em, 'Interpreter') and not hasattr(sys.stdout, '_testProxy'):
+        em.Interpreter._wasProxyInstalled = False
+
     try:
-        # EmPy Interpreter evaluation
-        interpreter = em.Interpreter(output=output, globals=dict(context))
-        interpreter.string(template_str)
-        interpreter.shutdown()
-        return output.getvalue().strip()
+        return em.expand(template_str, **context).strip()
     except Exception:
-        if hasattr(em, 'expand'):
-            return em.expand(template_str, **context).strip()
-        raise
+        output = io.StringIO()
+        interpreter = em.Interpreter(output=output, globals=dict(context))
+        try:
+            interpreter.string(template_str)
+            val = output.getvalue().strip()
+        finally:
+            interpreter.shutdown()
+        return val
 
 
 class ReleaseRepositorySpecification(RepositorySpecification):
@@ -101,9 +107,9 @@ class ReleaseRepositorySpecification(RepositorySpecification):
 
     def get_binary_package_name(self, pkg_name, os_name=None):
         if hasattr(self, 'binary_names') and isinstance(self.binary_names, dict) and pkg_name in self.binary_names:
-            return self.binary_names[pkg_name]
+            return self.binary_names[pkg_name].replace('_', '-')
         if hasattr(self, 'binary_name') and self.binary_name:
-            return self.binary_name
+            return self.binary_name.replace('_', '-')
 
         distro_name = self.target_distro_name or ''
         clean_distro = distro_name.replace('_', '-')
@@ -116,7 +122,8 @@ class ReleaseRepositorySpecification(RepositorySpecification):
         clean_origin = origin_distro.replace('_', '-')
 
         context = {
-            'package': raw_pkg,
+            'package': clean_pkg,
+            'package_raw': raw_pkg,
             'package_hyphens': clean_pkg,
             'package_underscores': pkg_name.replace('-', '_'),
             'package_parts': parts,
@@ -141,7 +148,8 @@ class ReleaseRepositorySpecification(RepositorySpecification):
             else:
                 template = "@(package_hyphens)"
 
-        return _expand_empy_template(template, context)
+        expanded = _expand_empy_template(template, context)
+        return expanded.replace('_', '-')
 
     def get_release_tag(self, pkg_name):
         data = {
