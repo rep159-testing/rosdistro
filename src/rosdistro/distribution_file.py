@@ -278,7 +278,7 @@ class DistributionFile(object):
         if prefix is not None:
             clean_distro = self.name.replace('_', '-')
             prefix = prefix.replace('{DISTRO}', clean_distro).replace('{distro}', clean_distro)
-            return '%s%s' % (prefix, clean_pkg)
+            return ('%s%s' % (prefix, clean_pkg)).replace('_', '-')
         return 'ros-%s-%s' % (self.name.replace('_', '-'), clean_pkg)
 
     def get_package_name_from_binary(self, binary_name):

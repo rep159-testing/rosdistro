@@ -68,14 +68,52 @@ def test_release_repository_sequential_regex_rules():
         'tags': {'release': '{package}/{version}'},
         'packages': ['my_special_package'],
         'binary_name_rules': [
-            {'search': '_', 'replace': '-'},
             {'search': '^(.*)$', 'replace': 'vendor-{DISTRO}-\\1'}
         ]
     }
     repo = ReleaseRepositorySpecification('custom_repo', data)
     repo.origin_distro = 'iron'
     
+    # Underscores in package name must be converted to dashes automatically
     assert repo.get_binary_package_name('my_special_package') == 'vendor-iron-my-special-package'
+
+
+def test_release_repository_mandatory_underscore_sanitization():
+    # 1. Rule that attempts to introduce underscores
+    data_rules = {
+        'url': 'https://github.com/custom/repo-release.git',
+        'version': '1.0.0-1',
+        'tags': {'release': '{package}/{version}'},
+        'packages': ['my_pkg'],
+        'binary_name_rules': [
+            {'search': '^(.*)$', 'replace': 'vendor_{DISTRO}_\\1'}
+        ]
+    }
+    repo_rules = ReleaseRepositorySpecification('custom_repo', data_rules)
+    repo_rules.origin_distro = 'iron'
+    assert repo_rules.get_binary_package_name('my_pkg') == 'vendor-iron-my-pkg'
+
+    # 2. Explicit binary_name containing underscores
+    data_explicit = {
+        'url': 'https://github.com/custom/repo-release.git',
+        'version': '1.0.0-1',
+        'tags': {'release': '{package}/{version}'},
+        'packages': ['my_pkg'],
+        'binary_name': 'custom_vendor_pkg'
+    }
+    repo_explicit = ReleaseRepositorySpecification('custom_repo', data_explicit)
+    assert repo_explicit.get_binary_package_name('my_pkg') == 'custom-vendor-pkg'
+
+    # 3. Explicit binary_names mapping containing underscores
+    data_dict = {
+        'url': 'https://github.com/custom/repo-release.git',
+        'version': '1.0.0-1',
+        'tags': {'release': '{package}/{version}'},
+        'packages': ['my_pkg'],
+        'binary_names': {'my_pkg': 'dict_vendor_pkg'}
+    }
+    repo_dict = ReleaseRepositorySpecification('custom_repo', data_dict)
+    assert repo_dict.get_binary_package_name('my_pkg') == 'dict-vendor-pkg'
 
 
 def test_distribution_file_binary_naming():

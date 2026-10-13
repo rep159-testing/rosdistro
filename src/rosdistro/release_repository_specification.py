@@ -77,9 +77,9 @@ class ReleaseRepositorySpecification(RepositorySpecification):
 
     def get_binary_package_name(self, pkg_name, os_name=None):
         if hasattr(self, 'binary_names') and isinstance(self.binary_names, dict) and pkg_name in self.binary_names:
-            return self.binary_names[pkg_name]
+            return self.binary_names[pkg_name].replace('_', '-')
         if hasattr(self, 'binary_name') and self.binary_name:
-            return self.binary_name
+            return self.binary_name.replace('_', '-')
 
         distro_name = self.target_distro_name or ''
         clean_distro = distro_name.replace('_', '-')
@@ -99,7 +99,7 @@ class ReleaseRepositorySpecification(RepositorySpecification):
         # 1. Sequential Regex Rules
         rules = getattr(self, 'binary_name_rules', None)
         if rules and isinstance(rules, list):
-            result = pkg_name
+            result = clean_pkg
             for rule in rules:
                 if isinstance(rule, dict) and 'search' in rule and 'replace' in rule:
                     search_pattern = rule['search']
@@ -107,7 +107,7 @@ class ReleaseRepositorySpecification(RepositorySpecification):
                     for k, v in var_context.items():
                         replace_pattern = replace_pattern.replace('{%s}' % k, v).replace('$%s' % k, v)
                     result = re.sub(search_pattern, replace_pattern, result)
-            return result
+            return result.replace('_', '-')
 
         # 2. Custom Prefix Template / binary_prefix
         raw_prefix = getattr(self, 'binary_prefix', None)
@@ -121,8 +121,8 @@ class ReleaseRepositorySpecification(RepositorySpecification):
             for k, v in var_context.items():
                 prefix = prefix.replace('{%s}' % k, v).replace('$%s' % k, v)
             if has_package_var:
-                return prefix
-            return '%s%s' % (prefix, clean_pkg)
+                return prefix.replace('_', '-')
+            return ('%s%s' % (prefix, clean_pkg)).replace('_', '-')
 
         # 3. Default Standard ROS convention
         if clean_distro:
