@@ -273,7 +273,8 @@ class DistributionFile(object):
             from .release_repository_specification import _expand_jinja_template
             parts = [p for p in re.split(r'[-_]', pkg_name) if p]
             context = {
-                'package': pkg_name,
+                'package': clean_pkg,
+                'package_raw': pkg_name,
                 'package_hyphens': clean_pkg,
                 'package_underscores': pkg_name.replace('-', '_'),
                 'package_parts': parts,
@@ -287,11 +288,11 @@ class DistributionFile(object):
                 'PACKAGE': clean_pkg,
                 'ORIGIN_DISTRO': clean_distro,
             }
-            return _expand_jinja_template(self.binary_template, context)
+            return _expand_jinja_template(self.binary_template, context).replace('_', '-')
 
         prefix = getattr(self, 'binary_prefix', None)
         if prefix is not None:
-            return '%s%s' % (prefix, clean_pkg)
+            return ('%s%s' % (prefix, clean_pkg)).replace('_', '-')
         return 'ros-%s-%s' % (clean_distro, clean_pkg)
 
     def get_package_name_from_binary(self, binary_name):
