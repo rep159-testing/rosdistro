@@ -58,11 +58,7 @@ class ReleaseRepositorySpecification(RepositorySpecification):
             # no packages means a single package
             self.package_names = [self.name]
 
-        self.binary_name = data.get('binary_name', None) if isinstance(data, dict) else None
-        self.binary_names = data.get('binary_names', {}) if isinstance(data, dict) else {}
-        self.binary_prefix = data.get('binary_prefix', None) if isinstance(data, dict) else None
-        self.binary_name_rules = data.get('binary_name_rules', None) if isinstance(data, dict) else None
-        self.binary_prefix_template = data.get('binary_prefix_template', None) if isinstance(data, dict) else None
+        self.binary_rule = data.get('binary_rule', None) if isinstance(data, dict) else None
 
         # for backward compatibility only
         self.release_repository = self
@@ -76,55 +72,30 @@ class ReleaseRepositorySpecification(RepositorySpecification):
         return origin_distro or getattr(self, 'distro_name', None)
 
     def get_binary_package_name(self, pkg_name, os_name=None):
-        if hasattr(self, 'binary_names') and isinstance(self.binary_names, dict) and pkg_name in self.binary_names:
-            return self.binary_names[pkg_name].replace('_', '-')
-        if hasattr(self, 'binary_name') and self.binary_name:
-            return self.binary_name.replace('_', '-')
-
         distro_name = self.target_distro_name or ''
         clean_distro = distro_name.replace('_', '-')
         clean_pkg = pkg_name.replace('_', '-')
         origin_distro = getattr(self, 'origin_distro', None) or distro_name
         clean_origin = origin_distro.replace('_', '-')
 
-        var_context = {
-            'DISTRO': clean_distro,
-            'distro': clean_distro,
-            'PACKAGE': clean_pkg,
-            'package': clean_pkg,
-            'ORIGIN_DISTRO': clean_origin,
-            'origin_distro': clean_origin,
-        }
-
-        # 1. Sequential Regex Rules
-        rules = getattr(self, 'binary_name_rules', None)
-        if rules and isinstance(rules, list):
-            result = clean_pkg
-            for rule in rules:
-                if isinstance(rule, dict) and 'search' in rule and 'replace' in rule:
-                    search_pattern = rule['search']
-                    replace_pattern = rule['replace']
-                    for k, v in var_context.items():
-                        replace_pattern = replace_pattern.replace('{%s}' % k, v).replace('$%s' % k, v)
-                    result = re.sub(search_pattern, replace_pattern, result)
+        rule = getattr(self, 'binary_rule', None)
+        if rule and isinstance(rule, dict) and 'search' in rule and 'replace' in rule:
+            var_context = {
+                'DISTRO': clean_distro,
+                'distro': clean_distro,
+                'PACKAGE': clean_pkg,
+                'package': clean_pkg,
+                'ORIGIN_DISTRO': clean_origin,
+                'origin_distro': clean_origin,
+            }
+            search_pattern = rule['search']
+            replace_pattern = rule['replace']
+            for k, v in var_context.items():
+                replace_pattern = replace_pattern.replace('{%s}' % k, v).replace('$%s' % k, v)
+            result = re.sub(search_pattern, replace_pattern, clean_pkg)
             return result.replace('_', '-')
 
-        # 2. Custom Prefix Template / binary_prefix
-        raw_prefix = getattr(self, 'binary_prefix', None)
-        if raw_prefix is None:
-            raw_prefix = getattr(self, 'binary_prefix_template', None)
-
-        if raw_prefix is not None:
-            has_package_var = ('{package}' in raw_prefix or '{PACKAGE}' in raw_prefix or
-                               '$package' in raw_prefix or '$PACKAGE' in raw_prefix)
-            prefix = raw_prefix
-            for k, v in var_context.items():
-                prefix = prefix.replace('{%s}' % k, v).replace('$%s' % k, v)
-            if has_package_var:
-                return prefix.replace('_', '-')
-            return ('%s%s' % (prefix, clean_pkg)).replace('_', '-')
-
-        # 3. Default Standard ROS convention
+        # Default Standard ROS convention
         if clean_distro:
             return 'ros-%s-%s' % (clean_distro, clean_pkg)
         return clean_pkg
@@ -149,4 +120,6 @@ class ReleaseRepositorySpecification(RepositorySpecification):
                 data['tags'][tag] = str(self.tags[tag])
         if len(self.package_names) > 1 or (len(self.package_names) == 1 and self.package_names[0] != self.name):
             data['packages'] = sorted(self.package_names)
+        if self.binary_rule is not None:
+            data['binary_rule'] = self.binary_rule
         return data
