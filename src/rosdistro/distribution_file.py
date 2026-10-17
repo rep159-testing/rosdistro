@@ -35,6 +35,7 @@ from .package import Package
 from .repository import Repository
 
 import logging
+import re
 logger = logging.getLogger('rosdistro')
 
 
@@ -55,6 +56,7 @@ class DistributionFile(object):
         self.version = int(data['version'])
 
         self.binary_rule = data.get('binary_rule', None)
+        self.install_rule = data.get('install_rule', None)
 
         self.repositories = {}
         self.release_packages = {}
@@ -70,6 +72,8 @@ class DistributionFile(object):
                     repo.release_repository.extension_method = None
                     if getattr(repo.release_repository, 'binary_rule', None) is None:
                         repo.release_repository.binary_rule = self.binary_rule
+                    if getattr(repo.release_repository, 'install_rule', None) is None:
+                        repo.release_repository.install_rule = self.install_rule
                 self.repositories[repo_name] = repo
 
                 if repo.release_repository:
@@ -166,9 +170,11 @@ class DistributionFile(object):
             data['dependencies'] = self.dependencies
         if getattr(self, 'binary_rule', None):
             data['binary_rule'] = self.binary_rule
+        if getattr(self, 'install_rule', None):
+            data['install_rule'] = self.install_rule
         return data
 
-    def merge_extends(self, parent_dist_file, extension_method, binary_rule=None):
+    def merge_extends(self, parent_dist_file, extension_method, binary_rule=None, install_rule=None):
         # Validate that release platforms of child are supported by parent
         for os_name, os_code_names in self.release_platforms.items():
             if os_name not in parent_dist_file.release_platforms:
@@ -223,6 +229,12 @@ class DistributionFile(object):
                 if effective_rule is not None:
                     parent_repo.binary_rule = effective_rule
 
+                effective_install_rule = install_rule if install_rule is not None else getattr(parent_repo, 'install_rule', None)
+                if effective_install_rule is None and hasattr(parent_dist_file, 'install_rule'):
+                    effective_install_rule = parent_dist_file.install_rule
+                if effective_install_rule is not None:
+                    parent_repo.install_rule = effective_install_rule
+
                 if parent_repo.release_repository:
                     if extension_method == 'source_rebuild':
                         parent_repo.release_repository.origin_distro = self.name
@@ -232,6 +244,8 @@ class DistributionFile(object):
 
                     if effective_rule is not None:
                         parent_repo.release_repository.binary_rule = effective_rule
+                    if effective_install_rule is not None:
+                        parent_repo.release_repository.install_rule = effective_install_rule
 
                 self.repositories[repo_name] = parent_repo
                 if parent_repo.release_repository:
@@ -246,6 +260,39 @@ class DistributionFile(object):
                                 raise RuntimeError("Child distribution '%s' is not allowed to override package '%s' from base distribution '%s' under extension_method 'binary_import' (violates ABI compatibility). Overriding is only permitted under 'source_rebuild'." % (self.name, pkg_name, parent_dist_file.name))
                         else:
                             self._add_package(pkg_name, parent_repo)
+
+    def get_install_prefix(self, pkg_name=None):
+        if pkg_name and pkg_name in self.release_packages:
+            pkg = self.release_packages[pkg_name]
+            repo = self.repositories.get(pkg.repository_name)
+            if repo and repo.release_repository and hasattr(repo.release_repository, 'get_install_prefix'):
+                return repo.release_repository.get_install_prefix(pkg_name)
+
+        clean_pkg = pkg_name.replace('_', '-') if pkg_name else ''
+        clean_distro = self.name.replace('_', '-')
+        rule = getattr(self, 'install_rule', None)
+        if rule:
+            var_context = {
+                'DISTRO': clean_distro,
+                'distro': clean_distro,
+                'PACKAGE': clean_pkg,
+                'package': clean_pkg,
+                'ORIGIN_DISTRO': clean_distro,
+                'origin_distro': clean_distro,
+            }
+            if isinstance(rule, str):
+                res = rule
+                for k, v in var_context.items():
+                    res = res.replace('{%s}' % k, v).replace('$%s' % k, v)
+                return res
+            elif isinstance(rule, dict) and 'search' in rule and 'replace' in rule:
+                search_pattern = rule['search']
+                replace_pattern = rule['replace']
+                for k, v in var_context.items():
+                    replace_pattern = replace_pattern.replace('{%s}' % k, v).replace('$%s' % k, v)
+                return re.sub(search_pattern, replace_pattern, clean_pkg)
+
+        return '/opt/ros/%s' % clean_distro
 
     def get_binary_package_name(self, pkg_name, os_name=None):
         if pkg_name in self.release_packages:
