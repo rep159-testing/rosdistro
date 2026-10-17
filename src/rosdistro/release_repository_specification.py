@@ -59,6 +59,7 @@ class ReleaseRepositorySpecification(RepositorySpecification):
             self.package_names = [self.name]
 
         self.binary_rule = data.get('binary_rule', None) if isinstance(data, dict) else None
+        self.install_rule = data.get('install_rule', None) if isinstance(data, dict) else None
 
         # for backward compatibility only
         self.release_repository = self
@@ -70,6 +71,39 @@ class ReleaseRepositorySpecification(RepositorySpecification):
         if extension_method == 'binary_import' and origin_distro:
             return origin_distro
         return origin_distro or getattr(self, 'distro_name', None)
+
+    def get_install_prefix(self, pkg_name=None):
+        distro_name = self.target_distro_name or ''
+        clean_distro = distro_name.replace('_', '-')
+        clean_pkg = (pkg_name or self.name).replace('_', '-')
+        origin_distro = getattr(self, 'origin_distro', None) or distro_name
+        clean_origin = origin_distro.replace('_', '-')
+
+        rule = getattr(self, 'install_rule', None)
+        if rule:
+            var_context = {
+                'DISTRO': clean_distro,
+                'distro': clean_distro,
+                'PACKAGE': clean_pkg,
+                'package': clean_pkg,
+                'ORIGIN_DISTRO': clean_origin,
+                'origin_distro': clean_origin,
+            }
+            if isinstance(rule, str):
+                res = rule
+                for k, v in var_context.items():
+                    res = res.replace('{%s}' % k, v).replace('$%s' % k, v)
+                return res
+            elif isinstance(rule, dict) and 'search' in rule and 'replace' in rule:
+                search_pattern = rule['search']
+                replace_pattern = rule['replace']
+                for k, v in var_context.items():
+                    replace_pattern = replace_pattern.replace('{%s}' % k, v).replace('$%s' % k, v)
+                return re.sub(search_pattern, replace_pattern, clean_pkg)
+
+        if clean_distro:
+            return '/opt/ros/%s' % clean_distro
+        return '/usr'
 
     def get_binary_package_name(self, pkg_name, os_name=None):
         distro_name = self.target_distro_name or ''
@@ -122,4 +156,6 @@ class ReleaseRepositorySpecification(RepositorySpecification):
             data['packages'] = sorted(self.package_names)
         if self.binary_rule is not None:
             data['binary_rule'] = self.binary_rule
+        if self.install_rule is not None:
+            data['install_rule'] = self.install_rule
         return data
