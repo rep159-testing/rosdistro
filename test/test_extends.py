@@ -259,3 +259,29 @@ def test_binary_import_other_overrides_still_forbidden():
     }, extends='base'))
     with pytest.raises(RuntimeError, match="override repository 'core_repo'"):
         child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+
+
+def test_binary_import_ros_workspace_needs_its_own_release():
+    # a source-only stanza must not silently take over the parent's release
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'ros_workspace': {
+            'source': {'type': 'git', 'url': 'https://github.com/example/ros_workspace.git', 'version': 'main'},
+        },
+    }, extends='base'))
+    with pytest.raises(RuntimeError, match="override repository 'ros_workspace'"):
+        child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+
+
+def test_binary_import_ros_workspace_cannot_carry_parent_packages():
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'ros_workspace': {'release': {
+            'packages': ['ros_workspace', 'core_pkg'],
+            'tags': {'release': 'release/{package}/{version}'},
+            'url': 'https://github.com/ros-gbp/ros_workspace-release.git',
+            'version': '1.0.4-1',
+        }},
+    }, extends='base'))
+    with pytest.raises(RuntimeError, match="override package 'core_pkg'"):
+        child.merge_extends(_base_with_ros_workspace(), 'binary_import')
