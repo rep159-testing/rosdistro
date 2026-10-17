@@ -186,18 +186,20 @@ class DistributionFile(object):
                 if getattr(current_repo, 'origin_distro', self.name) != self.name:
                     other_parent = current_repo.origin_distro
                     logger.warning("WARNING: Collision detected. Repository '%s' is defined in multiple parents ('%s' and '%s'). Using definition from '%s'." % (repo_name, other_parent, parent_dist_file.name, other_parent))
-                elif extension_method == 'binary_import' and repo_name not in BINARY_IMPORT_OVERRIDABLE:
+                elif extension_method == 'binary_import' and (repo_name not in BINARY_IMPORT_OVERRIDABLE or not current_repo.release_repository):
                     raise RuntimeError("Child distribution '%s' is not allowed to override repository '%s' from base distribution '%s' under extension_method 'binary_import' (violates ABI compatibility). Overriding is only permitted under 'source_rebuild'." % (self.name, repo_name, parent_dist_file.name))
 
                 # Merge missing specifications from the parent repository for
                 # source rebuild extensions, and for a repository a
-                # binary_import child may release itself
+                # binary_import child may release itself (which inherits
+                # only the parent's source and doc entries: the child must
+                # bring its own release stanza)
                 if extension_method == 'source_rebuild' or repo_name in BINARY_IMPORT_OVERRIDABLE:
                     if not current_repo.source_repository and parent_repo.source_repository:
                         current_repo.source_repository = parent_repo.source_repository
                     if not current_repo.doc_repository and parent_repo.doc_repository:
                         current_repo.doc_repository = parent_repo.doc_repository
-                    if not current_repo.release_repository and parent_repo.release_repository:
+                    if extension_method == 'source_rebuild' and not current_repo.release_repository and parent_repo.release_repository:
                         current_repo.release_repository = parent_repo.release_repository
 
                 # Check for package collisions even if repository already exists
