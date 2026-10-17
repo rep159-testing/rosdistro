@@ -191,3 +191,71 @@ def test_source_rebuild_override_allowed():
     assert child_dist.repositories['core_repo'].source_repository.url == 'https://github.com/ros/core.git'
 
 
+def _release_stanza(package, version):
+    return {
+        'packages': [package],
+        'tags': {'release': 'release/{package}/{version}'},
+        'url': 'https://github.com/ros-gbp/%s-release.git' % package,
+        'version': version,
+    }
+
+
+def _v3_distribution(repositories, extends=None):
+    data = {
+        'type': 'distribution',
+        'version': 3,
+        'release_platforms': {'ubuntu': ['noble']},
+        'repositories': repositories,
+    }
+    if extends:
+        data['extends'] = [{'distro_name': extends, 'extension_method': 'binary_import'}]
+    return data
+
+
+def _base_with_ros_workspace():
+    from rosdistro.distribution_file import DistributionFile
+    return DistributionFile('base', _v3_distribution({
+        'ros_workspace': {
+            'source': {'type': 'git', 'url': 'https://github.com/ros2/ros_workspace.git', 'version': 'latest'},
+            'release': _release_stanza('ros_workspace', '1.0.3-2'),
+        },
+        'core_repo': {'release': _release_stanza('core_pkg', '1.0.0-1')},
+    }))
+
+
+def test_binary_import_child_may_release_ros_workspace():
+    # REP 159: the child's own ros_workspace provides setup files that source
+    # the parents' setup files.
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'ros_workspace': {'release': _release_stanza('ros_workspace', '1.0.4-1')},
+    }, extends='base'))
+    child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+    workspace = child.repositories['ros_workspace']
+    assert workspace.origin_distro == 'child'
+    assert workspace.release_repository.version == '1.0.4-1'
+    # the source entry the child's stanza lacks comes from the parent
+    assert workspace.source_repository.url == 'https://github.com/ros2/ros_workspace.git'
+    assert child.release_packages['ros_workspace'].repository_name == 'ros_workspace'
+    # everything else is still the parent's binaries
+    assert child.repositories['core_repo'].origin_distro == 'base'
+    assert child.repositories['core_repo'].extension_method == 'binary_import'
+
+
+def test_binary_import_ros_workspace_from_another_repository():
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'workspace': {'release': _release_stanza('ros_workspace', '1.0.4-1')},
+    }, extends='base'))
+    child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+    assert child.release_packages['ros_workspace'].repository_name == 'workspace'
+
+
+def test_binary_import_other_overrides_still_forbidden():
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'ros_workspace': {'release': _release_stanza('ros_workspace', '1.0.4-1')},
+        'core_repo': {'release': _release_stanza('core_pkg', '2.0.0-1')},
+    }, extends='base'))
+    with pytest.raises(RuntimeError, match="override repository 'core_repo'"):
+        child.merge_extends(_base_with_ros_workspace(), 'binary_import')
