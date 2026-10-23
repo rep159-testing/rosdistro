@@ -31,6 +31,8 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+import re
+
 from .repository_specification import RepositorySpecification
 
 
@@ -56,8 +58,47 @@ class ReleaseRepositorySpecification(RepositorySpecification):
             # no packages means a single package
             self.package_names = [self.name]
 
+        self.binary_rule = data.get('binary_rule', None) if isinstance(data, dict) else None
+
         # for backward compatibility only
         self.release_repository = self
+
+    @property
+    def target_distro_name(self):
+        origin_distro = getattr(self, 'origin_distro', None)
+        extension_method = getattr(self, 'extension_method', None)
+        if extension_method == 'binary_import' and origin_distro:
+            return origin_distro
+        return origin_distro or getattr(self, 'distro_name', None)
+
+    def get_binary_package_name(self, pkg_name, os_name=None):
+        distro_name = self.target_distro_name or ''
+        clean_distro = distro_name.replace('_', '-')
+        clean_pkg = pkg_name.replace('_', '-')
+        origin_distro = getattr(self, 'origin_distro', None) or distro_name
+        clean_origin = origin_distro.replace('_', '-')
+
+        rule = getattr(self, 'binary_rule', None)
+        if rule and isinstance(rule, dict) and 'search' in rule and 'replace' in rule:
+            var_context = {
+                'DISTRO': clean_distro,
+                'distro': clean_distro,
+                'PACKAGE': clean_pkg,
+                'package': clean_pkg,
+                'ORIGIN_DISTRO': clean_origin,
+                'origin_distro': clean_origin,
+            }
+            search_pattern = rule['search']
+            replace_pattern = rule['replace']
+            for k, v in var_context.items():
+                replace_pattern = replace_pattern.replace('{%s}' % k, v).replace('$%s' % k, v)
+            result = re.sub(search_pattern, replace_pattern, clean_pkg)
+            return result.replace('_', '-')
+
+        # Default Standard ROS convention
+        if clean_distro:
+            return 'ros-%s-%s' % (clean_distro, clean_pkg)
+        return clean_pkg
 
     def get_release_tag(self, pkg_name):
         data = {
@@ -79,4 +120,6 @@ class ReleaseRepositorySpecification(RepositorySpecification):
                 data['tags'][tag] = str(self.tags[tag])
         if len(self.package_names) > 1 or (len(self.package_names) == 1 and self.package_names[0] != self.name):
             data['packages'] = sorted(self.package_names)
+        if self.binary_rule is not None:
+            data['binary_rule'] = self.binary_rule
         return data

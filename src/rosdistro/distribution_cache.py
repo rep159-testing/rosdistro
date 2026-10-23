@@ -87,7 +87,7 @@ class DistributionCache(object):
                         "Could not load the cache of distribution '%s', which '%s' extends: %s"
                         % (parent_name, name, e))
                 # Merge parent distribution file
-                self.distribution_file.merge_extends(parent_cache.distribution_file, ext['extension_method'])
+                self.distribution_file.merge_extends(parent_cache.distribution_file, ext['extension_method'], binary_rule=ext.get('binary_rule'))
                 # Merge package XMLs
                 for pkg_name, xml_str in parent_cache.release_package_xmls.items():
                     if pkg_name not in self.release_package_xmls:
