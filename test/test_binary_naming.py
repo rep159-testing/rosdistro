@@ -79,7 +79,7 @@ def test_release_repository_capture_groups_rule():
         'packages': ['nav2_bringup'],
         'binary_rule': {
             'search': '^nav2-(.*)$',
-            'replace': 'acme-{DISTRO}-navigation-\\1'
+            'replace': 'acme-{distro}-navigation-\\1'
         }
     }
     repo = ReleaseRepositorySpecification('navigation2', data)
@@ -97,7 +97,7 @@ def test_release_repository_mandatory_underscore_sanitization():
         'packages': ['my_special_package'],
         'binary_rule': {
             'search': '^',
-            'replace': 'vendor_{DISTRO}_'
+            'replace': 'vendor_{distro}_'
         }
     }
     repo_rules = ReleaseRepositorySpecification('custom_repo', data_rules)
@@ -105,6 +105,22 @@ def test_release_repository_mandatory_underscore_sanitization():
     
     # Both replacement string and package name underscores must be sanitized to dashes
     assert repo_rules.get_binary_package_name('my_special_package') == 'vendor-iron-my-special-package'
+
+
+def test_release_repository_variables():
+    data = {
+        'url': 'https://github.com/ros2-gbp/common_interfaces-release.git',
+        'version': '1.0.0-1',
+        'tags': {'release': '{package}/{version}'},
+        'packages': ['std_msgs'],
+        'binary_rule': {
+            'search': '^(.*)$',
+            'replace': 'pkg-{package}-from-{origin_distro}-on-{distro}'
+        }
+    }
+    repo = ReleaseRepositorySpecification('common_interfaces', data)
+    repo.origin_distro = 'iron'
+    assert repo.get_binary_package_name('std_msgs') == 'pkg-std-msgs-from-iron-on-iron'
 
 
 def test_distribution_file_binary_naming_default():
@@ -134,7 +150,7 @@ def test_distribution_file_global_binary_rule():
         'version': 3,
         'binary_rule': {
             'search': '^',
-            'replace': 'custom-{DISTRO}-'
+            'replace': 'custom-{distro}-'
         },
         'release_platforms': {'ubuntu': ['noble']},
         'repositories': {
@@ -159,7 +175,7 @@ def test_distribution_file_repo_override_rule():
         'version': 3,
         'binary_rule': {
             'search': '^',
-            'replace': 'vendor-{DISTRO}-'
+            'replace': 'vendor-{distro}-'
         },
         'release_platforms': {'ubuntu': ['noble']},
         'repositories': {

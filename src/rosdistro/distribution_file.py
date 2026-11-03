@@ -259,17 +259,14 @@ class DistributionFile(object):
         rule = getattr(self, 'binary_rule', None)
         if rule and isinstance(rule, dict) and 'search' in rule and 'replace' in rule:
             var_context = {
-                'DISTRO': clean_distro,
                 'distro': clean_distro,
-                'PACKAGE': clean_pkg,
                 'package': clean_pkg,
-                'ORIGIN_DISTRO': clean_distro,
                 'origin_distro': clean_distro,
             }
             search_pattern = rule['search']
             replace_pattern = rule['replace']
             for k, v in var_context.items():
-                replace_pattern = replace_pattern.replace('{%s}' % k, v).replace('$%s' % k, v)
+                replace_pattern = replace_pattern.replace('{%s}' % k, v)
             result = re.sub(search_pattern, replace_pattern, clean_pkg)
             return result.replace('_', '-')
 
