@@ -31,6 +31,7 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+import datetime
 try:
     from urllib.parse import urlparse
 except ImportError:
@@ -61,10 +62,20 @@ class Index(object):
                 self.distributions[distro_name] = {}
                 distro_data = data['distributions'][distro_name]
                 for key in distro_data:
-                    if key in ('distribution_status', 'distribution_type', 'python_version'):
+                    if key in ('distribution_status', 'distribution_type', 'python_version', 'distribution_eol_date'):
                         assert self.version >= 4, "'%s' format version '%d' does not allow a '%s' entry" % (Index._type, self.version, key)
                         if key == 'python_version':
                             assert isinstance(distro_data[key], int), 'wrong type of key "%s"' % key
+                        elif key == 'distribution_eol_date':
+                            if isinstance(distro_data[key], datetime.date) and not isinstance(distro_data[key], datetime.datetime):
+                                pass
+                            elif isinstance(distro_data[key], str):
+                                try:
+                                    datetime.date.fromisoformat(distro_data[key])
+                                except ValueError:
+                                    assert False, 'wrong format of key "%s", expected YYYY-MM-DD' % key
+                            else:
+                                assert False, 'wrong type of key "%s"' % key
                         else:
                             assert isinstance(distro_data[key], str), 'wrong type of key "%s"' % key
                         self.distributions[distro_name][key] = distro_data[key]

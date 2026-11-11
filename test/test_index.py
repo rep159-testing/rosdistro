@@ -125,3 +125,67 @@ def test_get_condition_context():
         'ROS_PYTHON_VERSION': '3',
         'ROS_VERSION': '1',
     }
+
+
+def test_index_v4_distribution_eol_date():
+    import datetime
+    from rosdistro.index import Index
+
+    # Valid datetime.date (as parsed by yaml.safe_load for unquoted YYYY-MM-DD)
+    data = {
+        'type': 'index',
+        'version': 4,
+        'distributions': {
+            'jetty': {
+                'distribution': ['jetty/distribution.yaml'],
+                'distribution_status': 'active',
+                'distribution_type': 'ros2',
+                'python_version': 3,
+                'distribution_eol_date': datetime.date(2031, 5, 1),
+            },
+            'lyrical': {
+                'distribution': ['lyrical/distribution.yaml'],
+                'distribution_status': 'active',
+                'distribution_type': 'ros2',
+                'python_version': 3,
+                'distribution_eol_date': '2031-05-01',
+            },
+        },
+    }
+    idx = Index(data, 'http://example.com')
+    assert idx.distributions['jetty']['distribution_eol_date'] == datetime.date(2031, 5, 1)
+    assert idx.distributions['lyrical']['distribution_eol_date'] == '2031-05-01'
+
+    # Invalid string format
+    bad_str_data = {
+        'type': 'index',
+        'version': 4,
+        'distributions': {
+            'bad': {
+                'distribution': ['bad/distribution.yaml'],
+                'distribution_eol_date': 'not-a-date',
+            },
+        },
+    }
+    try:
+        Index(bad_str_data, 'http://example.com')
+        assert False
+    except AssertionError:
+        pass
+
+    # Disallowed on version 3
+    v3_data = {
+        'type': 'index',
+        'version': 3,
+        'distributions': {
+            'bad': {
+                'distribution': ['bad/distribution.yaml'],
+                'distribution_eol_date': datetime.date(2031, 5, 1),
+            },
+        },
+    }
+    try:
+        Index(v3_data, 'http://example.com')
+        assert False
+    except AssertionError:
+        pass
