@@ -38,10 +38,9 @@ import logging
 import re
 logger = logging.getLogger('rosdistro')
 
-# REP 159: a binary_import child may release its own ros_workspace. Its setup
-# files source the parents' setup files; every other repository and package
-# of a binary_import parent stays the parent's.
-BINARY_IMPORT_OVERRIDABLE = frozenset(['ros_workspace'])
+# The package that installs the setup files of a distribution's prefix, unless
+# its distribution file names another one in 'workspace_package'.
+DEFAULT_WORKSPACE_PACKAGE = 'ros_workspace'
 
 
 class DistributionFile(object):
@@ -125,6 +124,14 @@ class DistributionFile(object):
                     'rosdep_minimum_target_platforms': dep.get('rosdep_minimum_target_platforms', [])
                 })
 
+        # the package that installs the setup files of this distribution's
+        # prefix; None means DEFAULT_WORKSPACE_PACKAGE
+        self.workspace_package = None
+        if 'workspace_package' in data and data['workspace_package']:
+            assert self.version >= 3, "'workspace_package' element is only supported in distribution version >= 3"
+            assert isinstance(data['workspace_package'], str), "'workspace_package' must be a package name"
+            self.workspace_package = data['workspace_package']
+
     def merge(self, other_dist_file):
         assert self.name == other_dist_file.name
         assert self.version == other_dist_file.version
@@ -177,10 +184,18 @@ class DistributionFile(object):
             data['binary_rule'] = self.binary_rule
         if getattr(self, 'install_rule', None):
             data['install_rule'] = self.install_rule
+        if self.workspace_package:
+            data['workspace_package'] = self.workspace_package
         return data
 
     def merge_extends(self, parent_dist_file, extension_method, binary_rule=None, install_rule=None):
-        # Validate that release platforms of child are supported by parent
+        # REP 159: a binary_import child may release its own workspace
+        # package, whose setup files source the parents' setup files; every
+        # other repository and package of a binary_import parent stays the
+        # parent's.
+        binary_import_overridable = frozenset([self.workspace_package or DEFAULT_WORKSPACE_PACKAGE])
+
+        # Validate target platform compatibility
         for os_name, os_code_names in self.release_platforms.items():
             if os_name not in parent_dist_file.release_platforms:
                 logger.warning("WARNING: Target platform OS '%s' specified in derived distribution is not supported by base distribution." % os_name)
@@ -198,7 +213,7 @@ class DistributionFile(object):
                 if getattr(current_repo, 'origin_distro', self.name) != self.name:
                     other_parent = current_repo.origin_distro
                     logger.warning("WARNING: Collision detected. Repository '%s' is defined in multiple parents ('%s' and '%s'). Using definition from '%s'." % (repo_name, other_parent, parent_dist_file.name, other_parent))
-                elif extension_method == 'binary_import' and (repo_name not in BINARY_IMPORT_OVERRIDABLE or not current_repo.release_repository):
+                elif extension_method == 'binary_import' and (repo_name not in binary_import_overridable or not current_repo.release_repository):
                     raise RuntimeError("Child distribution '%s' is not allowed to override repository '%s' from base distribution '%s' under extension_method 'binary_import' (violates ABI compatibility). Overriding is only permitted under 'source_rebuild'." % (self.name, repo_name, parent_dist_file.name))
 
                 # Merge missing specifications from the parent repository for
@@ -206,7 +221,7 @@ class DistributionFile(object):
                 # binary_import child may release itself (which inherits
                 # only the parent's source and doc entries: the child must
                 # bring its own release stanza)
-                if extension_method == 'source_rebuild' or repo_name in BINARY_IMPORT_OVERRIDABLE:
+                if extension_method == 'source_rebuild' or repo_name in binary_import_overridable:
                     if not current_repo.source_repository and parent_repo.source_repository:
                         current_repo.source_repository = parent_repo.source_repository
                     if not current_repo.doc_repository and parent_repo.doc_repository:
@@ -223,7 +238,7 @@ class DistributionFile(object):
                             if current_pkg_repo and getattr(current_pkg_repo, 'origin_distro', self.name) != self.name:
                                 other_parent = current_pkg_repo.origin_distro
                                 logger.warning("WARNING: Collision detected. Package '%s' is defined in multiple parents ('%s' and '%s'). Using definition from '%s'." % (pkg_name, other_parent, parent_dist_file.name, other_parent))
-                            elif extension_method == 'binary_import' and pkg_name not in BINARY_IMPORT_OVERRIDABLE:
+                            elif extension_method == 'binary_import' and pkg_name not in binary_import_overridable:
                                 raise RuntimeError("Child distribution '%s' is not allowed to override package '%s' from base distribution '%s' under extension_method 'binary_import' (violates ABI compatibility). Overriding is only permitted under 'source_rebuild'." % (self.name, pkg_name, parent_dist_file.name))
             else:
                 if extension_method == 'source_rebuild':
@@ -265,7 +280,7 @@ class DistributionFile(object):
                             if current_pkg_repo and getattr(current_pkg_repo, 'origin_distro', self.name) != self.name:
                                 other_parent = current_pkg_repo.origin_distro
                                 logger.warning("WARNING: Collision detected. Package '%s' is defined in multiple parents ('%s' and '%s'). Using definition from '%s'." % (pkg_name, other_parent, parent_dist_file.name, other_parent))
-                            elif extension_method == 'binary_import' and pkg_name not in BINARY_IMPORT_OVERRIDABLE:
+                            elif extension_method == 'binary_import' and pkg_name not in binary_import_overridable:
                                 raise RuntimeError("Child distribution '%s' is not allowed to override package '%s' from base distribution '%s' under extension_method 'binary_import' (violates ABI compatibility). Overriding is only permitted under 'source_rebuild'." % (self.name, pkg_name, parent_dist_file.name))
                         else:
                             self._add_package(pkg_name, parent_repo)

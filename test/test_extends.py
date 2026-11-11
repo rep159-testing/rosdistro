@@ -285,3 +285,84 @@ def test_binary_import_ros_workspace_cannot_carry_parent_packages():
     }, extends='base'))
     with pytest.raises(RuntimeError, match="override package 'core_pkg'"):
         child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+
+
+def test_workspace_package_defaults_to_none():
+    from rosdistro.distribution_file import DistributionFile
+    dist = DistributionFile('child', _v3_distribution({}))
+    assert dist.workspace_package is None
+    assert 'workspace_package' not in dist.get_data()
+
+
+def test_workspace_package_round_trip():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({})
+    data['workspace_package'] = 'ros_workspace_shell'
+    dist = DistributionFile('child', data)
+    assert dist.workspace_package == 'ros_workspace_shell'
+    assert dist.get_data()['workspace_package'] == 'ros_workspace_shell'
+    # the cache stores get_data(), so the field survives it
+    assert DistributionFile('child', dist.get_data()).workspace_package == 'ros_workspace_shell'
+
+
+def test_workspace_package_needs_version_3():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({})
+    data['version'] = 2
+    data['workspace_package'] = 'ros_workspace_shell'
+    with pytest.raises(AssertionError, match="'workspace_package' element is only supported"):
+        DistributionFile('child', data)
+
+
+def test_workspace_package_must_be_a_name():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({})
+    data['workspace_package'] = ['ros_workspace_shell']
+    with pytest.raises(AssertionError, match="'workspace_package' must be a package name"):
+        DistributionFile('child', data)
+
+
+def _base_with_ros_workspace_shell():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({
+        'ros_workspace_shell': {'release': _release_stanza('ros_workspace_shell', '0.1.0-1')},
+        'core_repo': {'release': _release_stanza('core_pkg', '1.0.0-1')},
+    })
+    data['workspace_package'] = 'ros_workspace_shell'
+    return DistributionFile('base', data)
+
+
+def test_binary_import_child_may_release_its_workspace_package():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({
+        'ros_workspace_shell': {'release': _release_stanza('ros_workspace_shell', '0.1.0-2')},
+    }, extends='base')
+    data['workspace_package'] = 'ros_workspace_shell'
+    child = DistributionFile('child', data)
+    child.merge_extends(_base_with_ros_workspace_shell(), 'binary_import')
+    workspace = child.repositories['ros_workspace_shell']
+    assert workspace.origin_distro == 'child'
+    assert workspace.release_repository.version == '0.1.0-2'
+    assert child.repositories['core_repo'].origin_distro == 'base'
+
+
+def test_binary_import_exemption_follows_the_child_workspace_package():
+    # the parent's choice does not matter: a child without the field may
+    # release only ros_workspace, whatever the parent names
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'ros_workspace_shell': {'release': _release_stanza('ros_workspace_shell', '0.1.0-2')},
+    }, extends='base'))
+    with pytest.raises(RuntimeError, match="override repository 'ros_workspace_shell'"):
+        child.merge_extends(_base_with_ros_workspace_shell(), 'binary_import')
+
+
+def test_binary_import_ros_workspace_not_overridable_with_another_workspace_package():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({
+        'ros_workspace': {'release': _release_stanza('ros_workspace', '1.0.4-1')},
+    }, extends='base')
+    data['workspace_package'] = 'ros_workspace_shell'
+    child = DistributionFile('child', data)
+    with pytest.raises(RuntimeError, match="override repository 'ros_workspace'"):
+        child.merge_extends(_base_with_ros_workspace(), 'binary_import')
