@@ -286,11 +286,13 @@ class DistributionFile(object):
                             self._add_package(pkg_name, parent_repo)
 
     def get_install_prefix(self, pkg_name=None):
-        if pkg_name and pkg_name in self.release_packages:
-            pkg = self.release_packages[pkg_name]
-            repo = self.repositories.get(pkg.repository_name)
-            if repo and repo.release_repository and hasattr(repo.release_repository, 'get_install_prefix'):
-                return repo.release_repository.get_install_prefix(pkg_name)
+        if pkg_name:
+            lookup_name = pkg_name if pkg_name in self.release_packages else pkg_name.replace('-', '_')
+            if lookup_name in self.release_packages:
+                pkg = self.release_packages[lookup_name]
+                repo = self.repositories.get(pkg.repository_name)
+                if repo and repo.release_repository and hasattr(repo.release_repository, 'get_install_prefix'):
+                    return repo.release_repository.get_install_prefix(lookup_name)
 
         clean_pkg = pkg_name.replace('_', '-') if pkg_name else ''
         clean_distro = self.name.replace('_', '-')
@@ -319,11 +321,12 @@ class DistributionFile(object):
         return '/opt/ros/%s' % clean_distro
 
     def get_binary_package_name(self, pkg_name, os_name=None):
-        if pkg_name in self.release_packages:
-            pkg = self.release_packages[pkg_name]
+        lookup_name = pkg_name if pkg_name in self.release_packages else pkg_name.replace('-', '_')
+        if lookup_name in self.release_packages:
+            pkg = self.release_packages[lookup_name]
             repo = self.repositories.get(pkg.repository_name)
             if repo and repo.release_repository:
-                return repo.release_repository.get_binary_package_name(pkg_name, os_name=os_name)
+                return repo.release_repository.get_binary_package_name(lookup_name, os_name=os_name)
 
         clean_pkg = pkg_name.replace('_', '-')
         clean_distro = self.name.replace('_', '-')

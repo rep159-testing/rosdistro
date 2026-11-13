@@ -231,3 +231,34 @@ def test_distribution_file_reverse_lookup():
     assert dist_file.get_package_name_from_binary('ros-rolling-std-msgs') == 'std_msgs'
     assert dist_file.get_package_name_from_binary('ros-rolling-sensor-msgs') == 'sensor_msgs'
     assert dist_file.get_package_name_from_binary('ros-rolling-unknown') is None
+
+
+def test_distribution_file_hyphenated_lookup_in_binary_import_child():
+    parent_data = {
+        'type': 'distribution',
+        'version': 3,
+        'release_platforms': {'ubuntu': ['resolute']},
+        'repositories': {
+            'rosidl_typesupport_fastrtps': {
+                'release': {
+                    'url': 'https://github.com/ros2-gbp/rosidl_typesupport_fastrtps-release.git',
+                    'version': '3.9.2-1',
+                    'tags': {'release': 'release/lyrical/{package}/{version}'},
+                    'packages': ['rosidl_typesupport_fastrtps_c', 'rosidl_typesupport_fastrtps_cpp']
+                }
+            }
+        }
+    }
+    child_data = {
+        'type': 'distribution',
+        'version': 3,
+        'release_platforms': {'ubuntu': ['resolute']},
+        'repositories': {}
+    }
+    parent_dist = DistributionFile('lyrical', parent_data)
+    child_dist = DistributionFile('extendablelyrical', child_data)
+    child_dist.merge_extends(parent_dist, 'binary_import')
+
+    assert child_dist.get_binary_package_name('rosidl_typesupport_fastrtps_c') == 'ros-lyrical-rosidl-typesupport-fastrtps-c'
+    assert child_dist.get_binary_package_name('rosidl-typesupport-fastrtps-c') == 'ros-lyrical-rosidl-typesupport-fastrtps-c'
+    assert child_dist.get_install_prefix('rosidl-typesupport-fastrtps-c') == '/opt/ros/lyrical'
