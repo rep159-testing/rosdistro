@@ -122,3 +122,21 @@ def test_distribution_level_install_prefix_propagation():
     assert dist_file.get_install_prefix() == '/opt/custom/custom-distro'
     assert dist_file.get_install_prefix('pkg_a') == '/opt/custom/custom-distro'
     assert dist_file.repositories['pkg_a'].release_repository.get_install_prefix('pkg_a') == '/opt/custom/custom-distro'
+
+
+def test_install_rule_canonical_lowercase_placeholders_only():
+    data = {
+        'url': 'https://github.com/vendor/repo-release.git',
+        'version': '1.0.0-1',
+        'tags': {'release': '{package}/{version}'},
+        'packages': ['vendor_tool'],
+        'install_rule': '/opt/{origin_distro}/{distro}/{package}'
+    }
+    repo = ReleaseRepositorySpecification('vendor_repo', data)
+    repo.origin_distro = 'jetty'
+    assert repo.get_install_prefix('vendor_tool') == '/opt/jetty/jetty/vendor-tool'
+
+    legacy_data = dict(data, install_rule='/opt/{DISTRO}/$distro')
+    legacy_repo = ReleaseRepositorySpecification('vendor_repo', legacy_data)
+    legacy_repo.origin_distro = 'jetty'
+    assert legacy_repo.get_install_prefix('vendor_tool') == '/opt/{DISTRO}/$distro'

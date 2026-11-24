@@ -366,3 +366,59 @@ def test_binary_import_ros_workspace_not_overridable_with_another_workspace_pack
     child = DistributionFile('child', data)
     with pytest.raises(RuntimeError, match="override repository 'ros_workspace'"):
         child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+
+
+def test_get_distribution_file_propagates_extends_binary_and_install_rules(tmp_path):
+    import yaml
+
+    base_yaml = {
+        'type': 'distribution',
+        'version': 3,
+        'release_platforms': {'ubuntu': ['resolute']},
+        'workspace_package': 'ros_workspace_shell',
+        'repositories': {
+            'gz-math': {
+                'release': {
+                    'packages': ['gz-math'],
+                    'tags': {'release': 'release/jetty/{package}/{version}'},
+                    'url': 'https://github.com/gazebosim/gz-math-release.git',
+                    'version': '9.3.0-1',
+                }
+            }
+        },
+    }
+    child_yaml = {
+        'type': 'distribution',
+        'version': 3,
+        'release_platforms': {'ubuntu': ['resolute']},
+        'extends': [{
+            'distro_name': 'jetty',
+            'extension_method': 'binary_import',
+            'binary_rule': {'search': '^', 'replace': 'vendor-{origin_distro}-'},
+            'install_rule': '/opt/vendor/{origin_distro}',
+        }],
+        'repositories': {},
+    }
+    index_yaml = {
+        'type': 'index',
+        'version': 4,
+        'distributions': {
+            'jetty': {'distribution': ['jetty/distribution.yaml']},
+            'lyrical_ext': {'distribution': ['lyrical_ext/distribution.yaml']},
+        },
+    }
+
+    (tmp_path / 'jetty').mkdir()
+    (tmp_path / 'lyrical_ext').mkdir()
+    (tmp_path / 'jetty' / 'distribution.yaml').write_text(yaml.safe_dump(base_yaml))
+    (tmp_path / 'lyrical_ext' / 'distribution.yaml').write_text(yaml.safe_dump(child_yaml))
+    index_path = tmp_path / 'index-v4.yaml'
+    index_path.write_text(yaml.safe_dump(index_yaml))
+
+    index = get_index(path_to_url(str(index_path)))
+    child_dist = get_distribution_file(index, 'lyrical_ext')
+
+    assert child_dist.extends[0]['install_rule'] == '/opt/vendor/{origin_distro}'
+    assert child_dist.get_data()['extends'][0]['install_rule'] == '/opt/vendor/{origin_distro}'
+    assert child_dist.get_binary_package_name('gz-math') == 'vendor-jetty-gz-math'
+    assert child_dist.get_install_prefix('gz-math') == '/opt/vendor/jetty'

@@ -113,6 +113,7 @@ class DistributionFile(object):
                     'index_url': ext.get('index_url', None),
                     'extension_method': ext['extension_method'],
                     'binary_rule': ext.get('binary_rule', None),
+                    'install_rule': ext.get('install_rule', None),
                 })
 
         self.dependencies = []
@@ -299,23 +300,20 @@ class DistributionFile(object):
         rule = getattr(self, 'install_rule', None)
         if rule:
             var_context = {
-                'DISTRO': clean_distro,
                 'distro': clean_distro,
-                'PACKAGE': clean_pkg,
                 'package': clean_pkg,
-                'ORIGIN_DISTRO': clean_distro,
                 'origin_distro': clean_distro,
             }
             if isinstance(rule, str):
                 res = rule
                 for k, v in var_context.items():
-                    res = res.replace('{%s}' % k, v).replace('$%s' % k, v)
+                    res = res.replace('{%s}' % k, v)
                 return res
             elif isinstance(rule, dict) and 'search' in rule and 'replace' in rule:
                 search_pattern = rule['search']
                 replace_pattern = rule['replace']
                 for k, v in var_context.items():
-                    replace_pattern = replace_pattern.replace('{%s}' % k, v).replace('$%s' % k, v)
+                    replace_pattern = replace_pattern.replace('{%s}' % k, v)
                 return re.sub(search_pattern, replace_pattern, clean_pkg)
 
         return '/opt/ros/%s' % clean_distro

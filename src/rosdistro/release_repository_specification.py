@@ -82,23 +82,20 @@ class ReleaseRepositorySpecification(RepositorySpecification):
         rule = getattr(self, 'install_rule', None)
         if rule:
             var_context = {
-                'DISTRO': clean_distro,
                 'distro': clean_distro,
-                'PACKAGE': clean_pkg,
                 'package': clean_pkg,
-                'ORIGIN_DISTRO': clean_origin,
                 'origin_distro': clean_origin,
             }
             if isinstance(rule, str):
                 res = rule
                 for k, v in var_context.items():
-                    res = res.replace('{%s}' % k, v).replace('$%s' % k, v)
+                    res = res.replace('{%s}' % k, v)
                 return res
             elif isinstance(rule, dict) and 'search' in rule and 'replace' in rule:
                 search_pattern = rule['search']
                 replace_pattern = rule['replace']
                 for k, v in var_context.items():
-                    replace_pattern = replace_pattern.replace('{%s}' % k, v).replace('$%s' % k, v)
+                    replace_pattern = replace_pattern.replace('{%s}' % k, v)
                 return re.sub(search_pattern, replace_pattern, clean_pkg)
 
         if clean_distro:
