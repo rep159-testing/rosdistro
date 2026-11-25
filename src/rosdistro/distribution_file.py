@@ -42,6 +42,13 @@ logger = logging.getLogger('rosdistro')
 # its distribution file names another one in 'workspace_package'.
 DEFAULT_WORKSPACE_PACKAGE = 'ros_workspace'
 
+# REP 159: the packages a workspace package needs in its own prefix. Since
+# ros_workspace was split, ros_workspace_shell installs the setup files and
+# ros_workspace adds the ament part on top of it.
+WORKSPACE_PACKAGE_DEPENDENCIES = {
+    'ros_workspace': ('ros_workspace_shell',),
+}
+
 
 class DistributionFile(object):
 
@@ -191,10 +198,15 @@ class DistributionFile(object):
 
     def merge_extends(self, parent_dist_file, extension_method, binary_rule=None, install_rule=None):
         # REP 159: a binary_import child may release its own workspace
-        # package, whose setup files source the parents' setup files; every
-        # other repository and package of a binary_import parent stays the
-        # parent's.
-        binary_import_overridable = frozenset([self.workspace_package or DEFAULT_WORKSPACE_PACKAGE])
+        # package, whose setup files source the parents' setup files, and,
+        # when it does, the packages that workspace package needs in its
+        # prefix (WORKSPACE_PACKAGE_DEPENDENCIES); every other repository and
+        # package of a binary_import parent stays the parent's.
+        workspace_package = self.workspace_package or DEFAULT_WORKSPACE_PACKAGE
+        workspace_dependencies = WORKSPACE_PACKAGE_DEPENDENCIES.get(workspace_package, ())
+        binary_import_overridable = frozenset([workspace_package])
+        if self._releases_own_package(workspace_package):
+            binary_import_overridable |= frozenset(workspace_dependencies)
 
         # Validate target platform compatibility
         for os_name, os_code_names in self.release_platforms.items():
@@ -242,6 +254,14 @@ class DistributionFile(object):
                             elif extension_method == 'binary_import' and pkg_name not in binary_import_overridable:
                                 raise RuntimeError("Child distribution '%s' is not allowed to override package '%s' from base distribution '%s' under extension_method 'binary_import' (violates ABI compatibility). Overriding is only permitted under 'source_rebuild'." % (self.name, pkg_name, parent_dist_file.name))
             else:
+                if extension_method == 'binary_import' and self._releases_own_package(workspace_package):
+                    for pkg_name in sorted(set(workspace_dependencies) & set(
+                            parent_repo.release_repository.package_names if parent_repo.release_repository else [])):
+                        logger.warning(
+                            "WARNING: Distribution '%s' releases its own '%s' but takes '%s' from '%s', "
+                            "so the setup files '%s' installs go to the prefix of '%s', not '%s'." % (
+                                self.name, workspace_package, pkg_name, parent_dist_file.name,
+                                pkg_name, parent_dist_file.name, self.name))
                 if extension_method == 'source_rebuild':
                     parent_repo.origin_distro = self.name
                 elif not hasattr(parent_repo, 'origin_distro') or not parent_repo.origin_distro:
@@ -285,6 +305,14 @@ class DistributionFile(object):
                                 raise RuntimeError("Child distribution '%s' is not allowed to override package '%s' from base distribution '%s' under extension_method 'binary_import' (violates ABI compatibility). Overriding is only permitted under 'source_rebuild'." % (self.name, pkg_name, parent_dist_file.name))
                         else:
                             self._add_package(pkg_name, parent_repo)
+
+    def _releases_own_package(self, pkg_name):
+        # True when this distribution file releases pkg_name itself, not
+        # through a repository merged from a parent
+        pkg = self.release_packages.get(pkg_name)
+        repo = self.repositories.get(pkg.repository_name) if pkg else None
+        return bool(repo and repo.release_repository) and \
+            getattr(repo, 'origin_distro', self.name) == self.name
 
     def get_install_prefix(self, pkg_name=None):
         if pkg_name:
