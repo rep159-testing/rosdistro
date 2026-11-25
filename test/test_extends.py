@@ -191,3 +191,234 @@ def test_source_rebuild_override_allowed():
     assert child_dist.repositories['core_repo'].source_repository.url == 'https://github.com/ros/core.git'
 
 
+def _release_stanza(package, version):
+    return {
+        'packages': [package],
+        'tags': {'release': 'release/{package}/{version}'},
+        'url': 'https://github.com/ros-gbp/%s-release.git' % package,
+        'version': version,
+    }
+
+
+def _v3_distribution(repositories, extends=None):
+    data = {
+        'type': 'distribution',
+        'version': 3,
+        'release_platforms': {'ubuntu': ['noble']},
+        'repositories': repositories,
+    }
+    if extends:
+        data['extends'] = [{'distro_name': extends, 'extension_method': 'binary_import'}]
+    return data
+
+
+def _base_with_ros_workspace():
+    from rosdistro.distribution_file import DistributionFile
+    return DistributionFile('base', _v3_distribution({
+        'ros_workspace': {
+            'source': {'type': 'git', 'url': 'https://github.com/ros2/ros_workspace.git', 'version': 'latest'},
+            'release': _release_stanza('ros_workspace', '1.0.3-2'),
+        },
+        'core_repo': {'release': _release_stanza('core_pkg', '1.0.0-1')},
+    }))
+
+
+def test_binary_import_child_may_release_ros_workspace():
+    # REP 159: the child's own ros_workspace provides setup files that source
+    # the parents' setup files.
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'ros_workspace': {'release': _release_stanza('ros_workspace', '1.0.4-1')},
+    }, extends='base'))
+    child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+    workspace = child.repositories['ros_workspace']
+    assert workspace.origin_distro == 'child'
+    assert workspace.release_repository.version == '1.0.4-1'
+    # the source entry the child's stanza lacks comes from the parent
+    assert workspace.source_repository.url == 'https://github.com/ros2/ros_workspace.git'
+    assert child.release_packages['ros_workspace'].repository_name == 'ros_workspace'
+    # everything else is still the parent's binaries
+    assert child.repositories['core_repo'].origin_distro == 'base'
+    assert child.repositories['core_repo'].extension_method == 'binary_import'
+
+
+def test_binary_import_ros_workspace_from_another_repository():
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'workspace': {'release': _release_stanza('ros_workspace', '1.0.4-1')},
+    }, extends='base'))
+    child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+    assert child.release_packages['ros_workspace'].repository_name == 'workspace'
+
+
+def test_binary_import_other_overrides_still_forbidden():
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'ros_workspace': {'release': _release_stanza('ros_workspace', '1.0.4-1')},
+        'core_repo': {'release': _release_stanza('core_pkg', '2.0.0-1')},
+    }, extends='base'))
+    with pytest.raises(RuntimeError, match="override repository 'core_repo'"):
+        child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+
+
+def test_binary_import_ros_workspace_needs_its_own_release():
+    # a source-only stanza must not silently take over the parent's release
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'ros_workspace': {
+            'source': {'type': 'git', 'url': 'https://github.com/example/ros_workspace.git', 'version': 'main'},
+        },
+    }, extends='base'))
+    with pytest.raises(RuntimeError, match="override repository 'ros_workspace'"):
+        child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+
+
+def test_binary_import_ros_workspace_cannot_carry_parent_packages():
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'ros_workspace': {'release': {
+            'packages': ['ros_workspace', 'core_pkg'],
+            'tags': {'release': 'release/{package}/{version}'},
+            'url': 'https://github.com/ros-gbp/ros_workspace-release.git',
+            'version': '1.0.4-1',
+        }},
+    }, extends='base'))
+    with pytest.raises(RuntimeError, match="override package 'core_pkg'"):
+        child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+
+
+def test_workspace_package_defaults_to_none():
+    from rosdistro.distribution_file import DistributionFile
+    dist = DistributionFile('child', _v3_distribution({}))
+    assert dist.workspace_package is None
+    assert 'workspace_package' not in dist.get_data()
+
+
+def test_workspace_package_round_trip():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({})
+    data['workspace_package'] = 'ros_workspace_shell'
+    dist = DistributionFile('child', data)
+    assert dist.workspace_package == 'ros_workspace_shell'
+    assert dist.get_data()['workspace_package'] == 'ros_workspace_shell'
+    # the cache stores get_data(), so the field survives it
+    assert DistributionFile('child', dist.get_data()).workspace_package == 'ros_workspace_shell'
+
+
+def test_workspace_package_needs_version_3():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({})
+    data['version'] = 2
+    data['workspace_package'] = 'ros_workspace_shell'
+    with pytest.raises(AssertionError, match="'workspace_package' element is only supported"):
+        DistributionFile('child', data)
+
+
+def test_workspace_package_must_be_a_name():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({})
+    data['workspace_package'] = ['ros_workspace_shell']
+    with pytest.raises(AssertionError, match="'workspace_package' must be a package name"):
+        DistributionFile('child', data)
+
+
+def _base_with_ros_workspace_shell():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({
+        'ros_workspace_shell': {'release': _release_stanza('ros_workspace_shell', '0.1.0-1')},
+        'core_repo': {'release': _release_stanza('core_pkg', '1.0.0-1')},
+    })
+    data['workspace_package'] = 'ros_workspace_shell'
+    return DistributionFile('base', data)
+
+
+def test_binary_import_child_may_release_its_workspace_package():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({
+        'ros_workspace_shell': {'release': _release_stanza('ros_workspace_shell', '0.1.0-2')},
+    }, extends='base')
+    data['workspace_package'] = 'ros_workspace_shell'
+    child = DistributionFile('child', data)
+    child.merge_extends(_base_with_ros_workspace_shell(), 'binary_import')
+    workspace = child.repositories['ros_workspace_shell']
+    assert workspace.origin_distro == 'child'
+    assert workspace.release_repository.version == '0.1.0-2'
+    assert child.repositories['core_repo'].origin_distro == 'base'
+
+
+def test_binary_import_exemption_follows_the_child_workspace_package():
+    # the parent's choice does not matter: a child without the field may
+    # release only ros_workspace, whatever the parent names
+    from rosdistro.distribution_file import DistributionFile
+    child = DistributionFile('child', _v3_distribution({
+        'ros_workspace_shell': {'release': _release_stanza('ros_workspace_shell', '0.1.0-2')},
+    }, extends='base'))
+    with pytest.raises(RuntimeError, match="override repository 'ros_workspace_shell'"):
+        child.merge_extends(_base_with_ros_workspace_shell(), 'binary_import')
+
+
+def test_binary_import_ros_workspace_not_overridable_with_another_workspace_package():
+    from rosdistro.distribution_file import DistributionFile
+    data = _v3_distribution({
+        'ros_workspace': {'release': _release_stanza('ros_workspace', '1.0.4-1')},
+    }, extends='base')
+    data['workspace_package'] = 'ros_workspace_shell'
+    child = DistributionFile('child', data)
+    with pytest.raises(RuntimeError, match="override repository 'ros_workspace'"):
+        child.merge_extends(_base_with_ros_workspace(), 'binary_import')
+
+
+def test_get_distribution_file_propagates_extends_binary_and_install_rules(tmp_path):
+    import yaml
+
+    base_yaml = {
+        'type': 'distribution',
+        'version': 3,
+        'release_platforms': {'ubuntu': ['resolute']},
+        'workspace_package': 'ros_workspace_shell',
+        'repositories': {
+            'gz-math': {
+                'release': {
+                    'packages': ['gz-math'],
+                    'tags': {'release': 'release/jetty/{package}/{version}'},
+                    'url': 'https://github.com/gazebosim/gz-math-release.git',
+                    'version': '9.3.0-1',
+                }
+            }
+        },
+    }
+    child_yaml = {
+        'type': 'distribution',
+        'version': 3,
+        'release_platforms': {'ubuntu': ['resolute']},
+        'extends': [{
+            'distro_name': 'jetty',
+            'extension_method': 'binary_import',
+            'binary_rule': {'search': '^', 'replace': 'vendor-{origin_distro}-'},
+            'install_rule': '/opt/vendor/{origin_distro}',
+        }],
+        'repositories': {},
+    }
+    index_yaml = {
+        'type': 'index',
+        'version': 4,
+        'distributions': {
+            'jetty': {'distribution': ['jetty/distribution.yaml']},
+            'lyrical_ext': {'distribution': ['lyrical_ext/distribution.yaml']},
+        },
+    }
+
+    (tmp_path / 'jetty').mkdir()
+    (tmp_path / 'lyrical_ext').mkdir()
+    (tmp_path / 'jetty' / 'distribution.yaml').write_text(yaml.safe_dump(base_yaml))
+    (tmp_path / 'lyrical_ext' / 'distribution.yaml').write_text(yaml.safe_dump(child_yaml))
+    index_path = tmp_path / 'index-v4.yaml'
+    index_path.write_text(yaml.safe_dump(index_yaml))
+
+    index = get_index(path_to_url(str(index_path)))
+    child_dist = get_distribution_file(index, 'lyrical_ext')
+
+    assert child_dist.extends[0]['install_rule'] == '/opt/vendor/{origin_distro}'
+    assert child_dist.get_data()['extends'][0]['install_rule'] == '/opt/vendor/{origin_distro}'
+    assert child_dist.get_binary_package_name('gz-math') == 'vendor-jetty-gz-math'
+    assert child_dist.get_install_prefix('gz-math') == '/opt/vendor/jetty'

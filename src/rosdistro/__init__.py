@@ -153,7 +153,11 @@ def _resolve_extends(index, dist_file, visited=None):
         parent_dist_file = get_distribution_file(parent_index, parent_dist_name, _visited=visited.copy())
 
         # Merge parent_dist_file into dist_file
-        dist_file.merge_extends(parent_dist_file, ext['extension_method'])
+        dist_file.merge_extends(
+            parent_dist_file,
+            ext['extension_method'],
+            binary_rule=ext.get('binary_rule'),
+            install_rule=ext.get('install_rule'))
 
 
 def get_distribution_file(index, dist_name, _visited=None):
